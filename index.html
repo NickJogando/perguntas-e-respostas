@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q&A - Envie sua Pergunta</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* Botão de login camuflado com a cor sugerida: #0F172B */
+        .stealth-login {
+            background-color: #0f172b;
+            color: #1e293b; /* Texto também muito escuro para não dar cana */
+            border: 1px solid #0f172b;
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+        /* Revela-se ligeiramente ao passar o rato */
+        .stealth-login:hover {
+            background-color: #1e293b;
+            color: #94a3b8;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Contentor Principal de Envio -->
+    <div id="main-content" class="w-full max-w-md bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
+        <h1 class="text-2xl font-bold mb-6 text-center text-blue-400">Mande sua Pergunta! 🎬</h1>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Seu Nome</label>
+                <input type="text" id="userName" placeholder="Ex: Biel" 
+                    class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Sua Pergunta</label>
+                <textarea id="userQuestion" rows="4" placeholder="Quantos mods você já fez?" 
+                    class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"></textarea>
+            </div>
+            
+            <p id="limitCounter" class="text-xs text-slate-400">Tem um limite de perguntas por dia, você só pode enviar mais <span id="remainingCount">3</span> perguntas hoje.</p>
+            
+            <button onclick="sendQuestion()" id="sendBtn" 
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors">
+                Enviar Pergunta!
+            </button>
+        </div>
+    </div>
+
+    <!-- Botão de Login Camuflado -->
+    <div class="fixed bottom-4 right-4">
+        <button onclick="showLoginModal()" class="stealth-login px-3 py-1 rounded text-[10px] uppercase tracking-widest">
+            Admin
+        </button>
+    </div>
+
+    <!-- Modal de Login -->
+    <div id="login-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center hidden p-4 z-50">
+        <div class="bg-slate-800 p-6 rounded-xl w-full max-w-xs border border-slate-600">
+            <h2 class="text-xl font-bold mb-4 text-center">Login dos adm</h2>
+            <input type="text" id="loginUser" placeholder="Usuário" class="w-full p-2 mb-2 rounded bg-slate-900 border border-slate-700 text-white">
+            <input type="password" id="loginPass" placeholder="Senha" class="w-full p-2 mb-4 rounded bg-slate-900 border border-slate-700 text-white">
+            <button onclick="handleLogin()" class="w-full bg-green-600 py-2 rounded font-bold hover:bg-green-500 transition">Entrar</button>
+            <button onclick="closeLogin()" class="w-full mt-2 text-sm text-slate-400">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Dashboard de Perguntas -->
+    <div id="admin-dashboard" class="fixed inset-0 bg-slate-900 hidden overflow-y-auto p-6 z-40">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-3xl font-bold text-blue-400">Perguntas Recebidas</h2>
+                <button onclick="logout()" class="bg-red-600 px-4 py-2 rounded text-sm font-bold">Sair</button>
+            </div>
+            <div id="questions-list" class="grid gap-4">
+                <p class="text-center text-slate-500 italic">A carregar pastas e perguntas...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configurações do Repositório do GitHub
+        const GITHUB_TOKEN = "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"; 
+        const REPO_OWNER = "NickJogando"; 
+        const REPO_NAME = "perguntas-e-respostas"; 
+        const ROOT_FOLDER = "Perguntas e nomes";
+
+        let isLogged = false;
+
+        // Verificação do Limite Diário (Guardado no Navegador)
+        function checkDailyLimit() {
+            const today = new Date().toLocaleDateString();
+            let data = JSON.parse(localStorage.getItem('qa_limit')) || { date: today, count: 0 };
+            if (data.date !== today) data = { date: today, count: 0 };
+            document.getElementById('remainingCount').innerText = 3 - data.count;
+            return data;
+        }
+
+        // Nome da subpasta por data (DD-MM-AAAA)
+        function getFolderName() {
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = now.getFullYear();
+            return `${d}-${m}-${y}`;
+        }
+
+        // Função para enviar pergunta para o GitHub
+        async function sendQuestion() {
+            const name = document.getElementById('userName').value.trim();
+            const question = document.getElementById('userQuestion').value.trim();
+            
+            if (!name || !question) {
+                alert("Por favor, preenche o nome e a pergunta!");
+                return;
+            }
+
+            let limitData = checkDailyLimit();
+            if (limitData.count >= 3) {
+                alert("Limite de 3 perguntas diárias atingido!");
+                return;
+            }
+
+            const folderName = getFolderName();
+            const fileName = `${name.replace(/\s+/g, '_')}_${Date.now()}.txt`;
+            const fullPath = `${ROOT_FOLDER}/${folderName}/${fileName}`;
+            const content = `Nome: ${name}\nPergunta: ${question}\nEnviado em: ${new Date().toLocaleString()}`;
+            
+            try {
+                const base64Content = btoa(unescape(encodeURIComponent(content)));
+                const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${fullPath}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${GITHUB_TOKEN}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `Nova pergunta na pasta ${folderName}`,
+                        content: base64Content
+                    })
+                });
+
+                if (response.ok) {
+                    limitData.count++;
+                    localStorage.setItem('qa_limit', JSON.stringify(limitData));
+                    checkDailyLimit();
+                    alert(`Enviado com sucesso para a pasta: ${folderName}`);
+                    document.getElementById('userQuestion').value = "";
+                } else {
+                    alert("Erro ao enviar. Verifique o token e as permissões do repositório.");
+                }
+            } catch (e) {
+                alert("Erro de ligação ao servidor.");
+            }
+        }
+
+        // Interface de Login
+        function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
+        function closeLogin() { document.getElementById('login-modal').classList.add('hidden'); }
+
+        function handleLogin() {
+            const u = document.getElementById('loginUser').value;
+            const p = document.getElementById('loginPass').value;
+            if (u === "biel" && p === "rafis") {
+                isLogged = true;
+                document.getElementById('login-modal').classList.add('hidden');
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+                loadAllQuestions();
+            } else {
+                alert("Utilizador ou senha incorretos!");
+            }
+        }
+
+        function logout() {
+            isLogged = false;
+            document.getElementById('admin-dashboard').classList.add('hidden');
+        }
+
+        // Carregar pastas e perguntas do GitHub
+        async function loadAllQuestions() {
+            const list = document.getElementById('questions-list');
+            list.innerHTML = `<p class="text-center text-slate-400 italic">A aceder às pastas de datas no GitHub...</p>`;
+
+            try {
+                const rootRes = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${ROOT_FOLDER}`, {
+                    headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+                });
+                
+                if (!rootRes.ok) throw new Error("Pasta raiz não encontrada no repositório.");
+                const items = await rootRes.json();
+                const folders = items.filter(i => i.type === 'dir');
+
+                if (folders.length === 0) {
+                    list.innerHTML = "<p class='text-center text-slate-500'>Nenhuma pasta de perguntas encontrada.</p>";
+                    return;
+                }
+
+                list.innerHTML = "";
+
+                // Percorre cada subpasta (data)
+                for (let folder of folders) {
+                    const folderTitle = document.createElement('h3');
+                    folderTitle.className = "text-xl font-bold mt-6 mb-2 text-blue-300 border-b border-slate-700 pb-1";
+                    folderTitle.innerText = `📁 Pasta: ${folder.name}`;
+                    list.appendChild(folderTitle);
+
+                    const folderContentRes = await fetch(folder.url, {
+                        headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+                    });
+                    const files = await folderContentRes.json();
+                    const txtFiles = files.filter(f => f.name.endsWith('.txt'));
+
+                    if (txtFiles.length === 0) {
+                        const empty = document.createElement('p');
+                        empty.className = "text-sm text-slate-500 italic ml-4";
+                        empty.innerText = "Nenhuma pergunta nesta data.";
+                        list.appendChild(empty);
+                        continue;
+                    }
+
+                    // Carrega o texto de cada ficheiro .txt
+                    for (let file of txtFiles) {
+                        const fileRes = await fetch(file.download_url);
+                        const text = await fileRes.text();
+                        
+                        const card = document.createElement('div');
+                        card.className = "bg-slate-800 border border-slate-700 p-4 rounded-lg shadow-lg ml-4 mb-2 hover:border-blue-500 transition";
+                        card.innerHTML = `<pre class="whitespace-pre-wrap font-sans text-sm text-slate-200">${text}</pre>`;
+                        list.appendChild(card);
+                    }
+                }
+            } catch (e) {
+                list.innerHTML = `<p class="text-red-400 text-center">Erro ao carregar: ${e.message}</p>`;
+            }
+        }
+
+        // Inicia o contador de limite ao abrir
+        checkDailyLimit();
+    </script>
+</body>
+</html>
